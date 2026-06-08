@@ -2,5 +2,4 @@ module Takanawa {
   header "takanawa.h"
 
   export *
-  module * { export * }
 }
