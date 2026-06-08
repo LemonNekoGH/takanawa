@@ -1,7 +1,7 @@
 # Takanawa
 
 Takanawa is a Rust range-download library designed to ship as a C ABI dynamic
-library on Windows, macOS, Linux, Android, and iOS. The v1 implementation stores
+library on Windows, macOS, Linux, Android, and iOS. The current implementation stores
 download state in a `.part` file with dual metadata slots so interrupted
 downloads can resume automatically.
 
