@@ -52,7 +52,7 @@ jobs:
               return 0
             fi
 
-            if grep -q 'no matching package named `takanawa-' "$log"; then
+            if grep -Eq 'no matching package named `takanawa-|failed to select a version for the requirement `takanawa-|candidate versions found which didn'\''t match' "$log"; then
               echo "::notice title=Skipped registry dry-run::$crate depends on an internal crate version that is not visible on crates.io yet. Listing package contents instead."
               cargo package --list --locked -p "$crate"
               return 0
