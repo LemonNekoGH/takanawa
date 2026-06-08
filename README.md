@@ -61,7 +61,7 @@ when a `v*` tag is pushed. Configure a GitHub Environment named
 - `MAVEN_CENTRAL_USERNAME`: Central Portal user token username.
 - `MAVEN_CENTRAL_PASSWORD`: Central Portal user token password.
 - `SIGNING_IN_MEMORY_KEY`: ASCII-armored private GPG key.
-- `SIGNING_IN_MEMORY_KEY_ID`: optional GPG key id.
+- `SIGNING_IN_MEMORY_KEY_ID`: GPG key id.
 - `SIGNING_IN_MEMORY_KEY_PASSWORD`: optional GPG key password.
 
 The release job builds the Android native libraries and runs:

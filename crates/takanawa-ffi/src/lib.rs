@@ -508,9 +508,10 @@ mod android_jni {
     use std::ffi::CString;
     use std::ptr;
 
-    use jni::JNIEnv;
+    use jni::errors::Error as JniError;
     use jni::objects::{JByteArray, JClass, JLongArray, JString};
     use jni::sys::{jbyte, jint, jlong, jstring};
+    use jni::{Env, EnvUnowned, Outcome};
 
     use super::{
         TKNW_ABI_VERSION, TknwDownload, TknwDownloadConfig, TknwDownloadSnapshot, TknwGlobalConfig,
@@ -521,9 +522,9 @@ mod android_jni {
     };
 
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_globalInit(
-        _env: JNIEnv<'_>,
-        _class: JClass<'_>,
+    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_globalInit<'local>(
+        _env: EnvUnowned<'local>,
+        _class: JClass<'local>,
         max_io: jint,
     ) -> jint {
         let Ok(max_io) = usize::try_from(max_io) else {
@@ -538,17 +539,17 @@ mod android_jni {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_globalShutdown(
-        _env: JNIEnv<'_>,
-        _class: JClass<'_>,
+    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_globalShutdown<'local>(
+        _env: EnvUnowned<'local>,
+        _class: JClass<'local>,
     ) -> jint {
         status_code(tknw_global_shutdown())
     }
 
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_globalSetMaxIo(
-        _env: JNIEnv<'_>,
-        _class: JClass<'_>,
+    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_globalSetMaxIo<'local>(
+        _env: EnvUnowned<'local>,
+        _class: JClass<'local>,
         max_io: jint,
     ) -> jint {
         let Ok(max_io) = usize::try_from(max_io) else {
@@ -558,94 +559,102 @@ mod android_jni {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadCreate(
-        mut env: JNIEnv<'_>,
-        _class: JClass<'_>,
-        url: JString<'_>,
-        target_path: JString<'_>,
+    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadCreate<'local>(
+        mut env: EnvUnowned<'local>,
+        _class: JClass<'local>,
+        url: JString<'local>,
+        target_path: JString<'local>,
         chunk_size: jlong,
         parallelism: jint,
-        expected_sha256: JByteArray<'_>,
-        out_handle: JLongArray<'_>,
+        expected_sha256: JByteArray<'local>,
+        out_handle: JLongArray<'local>,
     ) -> jint {
-        let Ok(chunk_size) = u64::try_from(chunk_size) else {
-            return status_code(TknwStatus::InvalidConfig);
-        };
-        let Ok(parallelism) = usize::try_from(parallelism) else {
-            return status_code(TknwStatus::InvalidConfig);
-        };
+        match env
+            .with_env(|env| {
+                let Ok(chunk_size) = u64::try_from(chunk_size) else {
+                    return Ok::<jint, JniError>(status_code(TknwStatus::InvalidConfig));
+                };
+                let Ok(parallelism) = usize::try_from(parallelism) else {
+                    return Ok::<jint, JniError>(status_code(TknwStatus::InvalidConfig));
+                };
 
-        let url = match read_java_string(&mut env, &url) {
-            Ok(url) => url,
-            Err(status) => return status_code(status),
-        };
-        let target_path = match read_java_string(&mut env, &target_path) {
-            Ok(target_path) => target_path,
-            Err(status) => return status_code(status),
-        };
-        let expected_hash = match read_optional_hash(&env, &expected_sha256) {
-            Ok(expected_hash) => expected_hash,
-            Err(status) => return status_code(status),
-        };
-        let hash_ptr = expected_hash.as_ref().map_or(ptr::null(), Vec::as_ptr);
-        let hash_len = expected_hash.as_ref().map_or(0, Vec::len);
-        let config = TknwDownloadConfig {
-            abi_version: TKNW_ABI_VERSION,
-            struct_size: size_of::<TknwDownloadConfig>(),
-            url: url.as_ptr(),
-            target_path: target_path.as_ptr(),
-            chunk_size,
-            parallelism,
-            hash_kind: if expected_hash.is_some() {
-                TknwHashKind::Sha256 as u32
-            } else {
-                TknwHashKind::None as u32
-            },
-            expected_sha256: hash_ptr,
-            expected_sha256_len: hash_len,
-        };
-        let mut download = ptr::null_mut();
-        let status = tknw_download_create(&raw const config, &raw mut download);
-        if status != TknwStatus::Ok {
-            return status_code(status);
+                let url = match read_java_string(env, &url) {
+                    Ok(url) => url,
+                    Err(status) => return Ok::<jint, JniError>(status_code(status)),
+                };
+                let target_path = match read_java_string(env, &target_path) {
+                    Ok(target_path) => target_path,
+                    Err(status) => return Ok::<jint, JniError>(status_code(status)),
+                };
+                let expected_hash = match read_optional_hash(env, &expected_sha256) {
+                    Ok(expected_hash) => expected_hash,
+                    Err(status) => return Ok::<jint, JniError>(status_code(status)),
+                };
+                let hash_ptr = expected_hash.as_ref().map_or(ptr::null(), Vec::as_ptr);
+                let hash_len = expected_hash.as_ref().map_or(0, Vec::len);
+                let config = TknwDownloadConfig {
+                    abi_version: TKNW_ABI_VERSION,
+                    struct_size: size_of::<TknwDownloadConfig>(),
+                    url: url.as_ptr(),
+                    target_path: target_path.as_ptr(),
+                    chunk_size,
+                    parallelism,
+                    hash_kind: if expected_hash.is_some() {
+                        TknwHashKind::Sha256 as u32
+                    } else {
+                        TknwHashKind::None as u32
+                    },
+                    expected_sha256: hash_ptr,
+                    expected_sha256_len: hash_len,
+                };
+                let mut download = ptr::null_mut();
+                let status = tknw_download_create(&raw const config, &raw mut download);
+                if status != TknwStatus::Ok {
+                    return Ok::<jint, JniError>(status_code(status));
+                }
+
+                Ok::<jint, JniError>(write_long_array(env, &out_handle, &[download as jlong]))
+            })
+            .into_outcome()
+        {
+            Outcome::Ok(status) => status,
+            Outcome::Err(_) | Outcome::Panic(_) => status_code(TknwStatus::Internal),
         }
-
-        write_long_array(&env, &out_handle, &[download as jlong])
     }
 
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadStart(
-        _env: JNIEnv<'_>,
-        _class: JClass<'_>,
+    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadStart<'local>(
+        _env: EnvUnowned<'local>,
+        _class: JClass<'local>,
         handle: jlong,
     ) -> jint {
         status_code(tknw_download_start(download_mut(handle)))
     }
 
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadPause(
-        _env: JNIEnv<'_>,
-        _class: JClass<'_>,
+    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadPause<'local>(
+        _env: EnvUnowned<'local>,
+        _class: JClass<'local>,
         handle: jlong,
     ) -> jint {
         status_code(tknw_download_pause(download_mut(handle)))
     }
 
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadCancel(
-        _env: JNIEnv<'_>,
-        _class: JClass<'_>,
+    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadCancel<'local>(
+        _env: EnvUnowned<'local>,
+        _class: JClass<'local>,
         handle: jlong,
     ) -> jint {
         status_code(tknw_download_cancel(download_mut(handle)))
     }
 
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadSnapshot(
-        env: JNIEnv<'_>,
-        _class: JClass<'_>,
+    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadSnapshot<'local>(
+        mut env: EnvUnowned<'local>,
+        _class: JClass<'local>,
         handle: jlong,
-        out_snapshot: JLongArray<'_>,
+        out_snapshot: JLongArray<'local>,
     ) -> jint {
         let mut snapshot = TknwDownloadSnapshot {
             abi_version: TKNW_ABI_VERSION,
@@ -667,15 +676,21 @@ mod android_jni {
             Ok(values) => values,
             Err(status) => return status_code(status),
         };
-        write_long_array(&env, &out_snapshot, &values)
+        match env
+            .with_env(|env| Ok::<jint, JniError>(write_long_array(env, &out_snapshot, &values)))
+            .into_outcome()
+        {
+            Outcome::Ok(status) => status,
+            Outcome::Err(_) | Outcome::Panic(_) => status_code(TknwStatus::Internal),
+        }
     }
 
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadBitmapSize(
-        env: JNIEnv<'_>,
-        _class: JClass<'_>,
+    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadBitmapSize<'local>(
+        mut env: EnvUnowned<'local>,
+        _class: JClass<'local>,
         handle: jlong,
-        out_size: JLongArray<'_>,
+        out_size: JLongArray<'local>,
     ) -> jint {
         let mut written = 0;
         let status =
@@ -686,82 +701,102 @@ mod android_jni {
         let Ok(written) = jlong::try_from(written) else {
             return status_code(TknwStatus::Internal);
         };
-        write_long_array(&env, &out_size, &[written])
+        match env
+            .with_env(|env| Ok::<jint, JniError>(write_long_array(env, &out_size, &[written])))
+            .into_outcome()
+        {
+            Outcome::Ok(status) => status,
+            Outcome::Err(_) | Outcome::Panic(_) => status_code(TknwStatus::Internal),
+        }
     }
 
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadCopyBitmap(
-        env: JNIEnv<'_>,
-        _class: JClass<'_>,
+    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadCopyBitmap<'local>(
+        mut env: EnvUnowned<'local>,
+        _class: JClass<'local>,
         handle: jlong,
-        out_bitmap: JByteArray<'_>,
+        out_bitmap: JByteArray<'local>,
     ) -> jint {
-        if out_bitmap.as_raw().is_null() {
-            return status_code(TknwStatus::NullPointer);
-        }
-        let Ok(len) = env.get_array_length(&out_bitmap) else {
-            return status_code(TknwStatus::InvalidConfig);
-        };
-        let Ok(len) = usize::try_from(len) else {
-            return status_code(TknwStatus::InvalidConfig);
-        };
-        let mut buffer = vec![0; len];
-        let mut written = 0;
-        let status = tknw_download_copy_bitmap(
-            download_const(handle),
-            buffer.as_mut_ptr(),
-            buffer.len(),
-            &raw mut written,
-        );
-        if status != TknwStatus::Ok {
-            return status_code(status);
-        }
-        let signed = buffer
-            .into_iter()
-            .take(written)
-            .map(|byte| jbyte::from_ne_bytes([byte]))
-            .collect::<Vec<_>>();
-        match env.set_byte_array_region(&out_bitmap, 0, &signed) {
-            Ok(()) => status_code(TknwStatus::Ok),
-            Err(_) => status_code(TknwStatus::Internal),
+        match env
+            .with_env(|env| {
+                if out_bitmap.as_raw().is_null() {
+                    return Ok::<jint, JniError>(status_code(TknwStatus::NullPointer));
+                }
+                let Ok(len) = out_bitmap.len(env) else {
+                    return Ok::<jint, JniError>(status_code(TknwStatus::InvalidConfig));
+                };
+                let mut buffer = vec![0; len];
+                let mut written = 0;
+                let status = tknw_download_copy_bitmap(
+                    download_const(handle),
+                    buffer.as_mut_ptr(),
+                    buffer.len(),
+                    &raw mut written,
+                );
+                if status != TknwStatus::Ok {
+                    return Ok::<jint, JniError>(status_code(status));
+                }
+                let signed = buffer
+                    .into_iter()
+                    .take(written)
+                    .map(|byte| jbyte::from_ne_bytes([byte]))
+                    .collect::<Vec<_>>();
+                Ok::<jint, JniError>(match out_bitmap.set_region(env, 0, &signed) {
+                    Ok(()) => status_code(TknwStatus::Ok),
+                    Err(_) => status_code(TknwStatus::Internal),
+                })
+            })
+            .into_outcome()
+        {
+            Outcome::Ok(status) => status,
+            Outcome::Err(_) | Outcome::Panic(_) => status_code(TknwStatus::Internal),
         }
     }
 
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadLastError(
-        env: JNIEnv<'_>,
-        _class: JClass<'_>,
+    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadLastError<'local>(
+        mut env: EnvUnowned<'local>,
+        _class: JClass<'local>,
         handle: jlong,
     ) -> jstring {
-        let message = last_error(download_const(handle));
-        env.new_string(message)
-            .map_or_else(|_| ptr::null_mut(), JString::into_raw)
+        match env
+            .with_env(|env| {
+                let message = last_error(download_const(handle));
+                Ok::<jstring, JniError>(
+                    env.new_string(message)
+                        .map_or_else(|_| ptr::null_mut(), JString::into_raw),
+                )
+            })
+            .into_outcome()
+        {
+            Outcome::Ok(value) => value,
+            Outcome::Err(_) | Outcome::Panic(_) => ptr::null_mut(),
+        }
     }
 
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadRelease(
-        _env: JNIEnv<'_>,
-        _class: JClass<'_>,
+    pub extern "system" fn Java_ai_yetanother_takanawa_NativeBridge_downloadRelease<'local>(
+        _env: EnvUnowned<'local>,
+        _class: JClass<'local>,
         handle: jlong,
     ) -> jint {
         let mut download = download_mut(handle);
         status_code(tknw_download_release(&raw mut download))
     }
 
-    fn read_java_string(env: &mut JNIEnv<'_>, value: &JString<'_>) -> Result<CString, TknwStatus> {
+    fn read_java_string(env: &mut Env<'_>, value: &JString<'_>) -> Result<CString, TknwStatus> {
         if value.as_raw().is_null() {
             return Err(TknwStatus::NullPointer);
         }
-        let value = env
-            .get_string(value)
+        let value = value
+            .try_to_string(env)
             .map_err(|_| TknwStatus::InvalidConfig)?
-            .to_string_lossy()
-            .into_owned();
+            .to_string();
         CString::new(value).map_err(|_| TknwStatus::InvalidConfig)
     }
 
     fn read_optional_hash(
-        env: &JNIEnv<'_>,
+        env: &mut Env<'_>,
         value: &JByteArray<'_>,
     ) -> Result<Option<Vec<u8>>, TknwStatus> {
         if value.as_raw().is_null() {
@@ -773,20 +808,17 @@ mod android_jni {
         Ok(Some(hash))
     }
 
-    fn write_long_array(env: &JNIEnv<'_>, array: &JLongArray<'_>, values: &[jlong]) -> jint {
+    fn write_long_array(env: &mut Env<'_>, array: &JLongArray<'_>, values: &[jlong]) -> jint {
         if array.as_raw().is_null() {
             return status_code(TknwStatus::NullPointer);
         }
-        let Ok(len) = env.get_array_length(array) else {
+        let Ok(len) = array.len(env) else {
             return status_code(TknwStatus::InvalidConfig);
         };
-        let Ok(required_len) = i32::try_from(values.len()) else {
-            return status_code(TknwStatus::Internal);
-        };
-        if len < required_len {
+        if len < values.len() {
             return status_code(TknwStatus::BufferTooSmall);
         }
-        match env.set_long_array_region(array, 0, values) {
+        match array.set_region(env, 0, values) {
             Ok(()) => status_code(TknwStatus::Ok),
             Err(_) => status_code(TknwStatus::Internal),
         }
