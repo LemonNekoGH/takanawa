@@ -65,6 +65,12 @@ depends = ["package:cocoapods"]
 run = "bash -lc 'TAKANAWA_XCFRAMEWORK_URL=\"file://$(pwd)/target/cocoapods/Takanawa.xcframework.zip\" TAKANAWA_XCFRAMEWORK_SHA256=\"$(cat target/cocoapods/Takanawa.xcframework.zip.sha256)\" bundle exec pod spec lint Takanawa.podspec --verbose --allow-warnings'"
 sources = ["Takanawa.podspec", "target/cocoapods/Takanawa.xcframework.zip", "target/cocoapods/Takanawa.xcframework.zip.sha256"]
 
+[tasks."test:swift-integration"]
+description = "Build and run a SwiftPM smoke test against the packaged XCFramework"
+depends = ["package:cocoapods"]
+run = "bash scripts/test-swift-integration.sh"
+sources = ["fixtures/swift-integration/**/*.swift", "fixtures/swift-integration/Package.swift", "target/cocoapods/Takanawa.xcframework.zip", "target/cocoapods/Takanawa.xcframework.zip.sha256"]
+
 [tasks."publish:cocoapods"]
 description = "Publish the CocoaPods podspec to the trunk registry"
 depends = ["lint:cocoapods"]

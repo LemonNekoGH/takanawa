@@ -1,0 +1,19 @@
+// swift-tools-version: 5.9
+import PackageDescription
+
+let package = Package(
+  name: "TakanawaSwiftIntegration",
+  platforms: [
+    .macOS(.v12)
+  ],
+  targets: [
+    .executableTarget(
+      name: "TakanawaSmoke",
+      dependencies: ["Takanawa"]
+    ),
+    .binaryTarget(
+      name: "Takanawa",
+      path: "Takanawa.xcframework"
+    )
+  ]
+)

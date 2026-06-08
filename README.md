@@ -22,6 +22,7 @@ The CocoaPods package is distributed as a prebuilt `Takanawa.xcframework`.
 ```bash
 bundle install
 mise run package:cocoapods
+mise run test:swift-integration
 mise run lint:cocoapods
 ```
 

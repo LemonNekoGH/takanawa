@@ -64,6 +64,7 @@ jobs:
           experimental: true
       - uses: Swatinem/rust-cache@v2
       - run: mise run package:apple
+      - run: mise run test:swift-integration
       - uses: actions/upload-artifact@v4
         with:
           name: Takanawa.xcframework
