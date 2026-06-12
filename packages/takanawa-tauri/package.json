@@ -1,11 +1,11 @@
 {
   "name": "takanawa-tauri",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Tauri v2 bindings for Takanawa downloads.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yetanother.ai/takanawa.git",
+    "url": "https://github.com/yetanother.ai/takanawa",
     "directory": "packages/takanawa-tauri"
   },
   "type": "module",
