@@ -24,7 +24,9 @@ downloads can resume automatically.
   Tauri app.
 
 Default TLS uses `rustls` with bundled webpki roots via the `tls-rustls`
-feature. Platform certificate roots are reserved for a future feature flag.
+feature. Platform-native TLS can be selected with `default-features = false`
+and the `tls-platform-native` or `tls-platform-roots` feature. That backend
+uses the operating system TLS stack on Windows and macOS, and OpenSSL on Linux.
 
 ## Versioning
 
@@ -55,7 +57,7 @@ The Android SDK is published as:
 
 ```kotlin
 dependencies {
-    implementation("ai.yetanother:takanawa-android:0.5.3")
+    implementation("ai.yetanother:takanawa-android:0.6.0")
 }
 ```
 
