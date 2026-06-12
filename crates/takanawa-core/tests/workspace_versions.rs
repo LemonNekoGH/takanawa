@@ -121,7 +121,7 @@ fn published_version_references_match_workspace_version() {
         ),
         (
             "docs/guide/apple.md",
-            r#".package(url: "https://github.com/yetanother.ai/takanawa.git", exact: "{{ takanawaVersion }}")"#,
+            r#".package(url: "https://github.com/yet-another-ai/takanawa.git", exact: "{{ takanawaVersion }}")"#,
         ),
         (
             "docs/guide/rust.md",
