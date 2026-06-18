@@ -111,7 +111,7 @@ jobs:
           TAKANAWA_WINDOWS_TARGET: ${{ matrix.target }}
         run: |
           mise run package:gdextension-desktop
-          mkdir target/dist
+          New-Item -ItemType Directory -Force -Path target/dist | Out-Null
           tar -C target/gdextension -czf target/dist/takanawa-gdextension-${{ matrix.artifact }}.tar.gz addons
       - uses: actions/upload-artifact@v4
         with:
