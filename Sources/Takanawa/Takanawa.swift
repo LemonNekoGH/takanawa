@@ -293,7 +293,7 @@ public final class TakanawaDownload {
   }
 
   public func lastErrorStatus() throws -> TakanawaError? {
-    lastErrorStatus(for: try openHandle())
+    lastErrorStatusForHandle(try openHandle())
   }
 
   public func close() throws {
@@ -358,7 +358,7 @@ public struct DownloadSnapshot: Sendable, Equatable {
     self.chunkCount = native.chunk_count
     self.completedChunks = native.completed_chunks
     self.activeIo = native.active_io
-    self.lastError = lastErrorStatus(for: handle)
+    self.lastError = lastErrorStatusForHandle(handle)
   }
 }
 
@@ -566,7 +566,7 @@ private func lastErrorMessage(for handle: OpaquePointer?) -> String? {
   return String(cString: buffer)
 }
 
-private func lastErrorStatus(for handle: OpaquePointer?) -> TakanawaError? {
+private func lastErrorStatusForHandle(_ handle: OpaquePointer?) -> TakanawaError? {
   guard let handle else {
     return nil
   }
