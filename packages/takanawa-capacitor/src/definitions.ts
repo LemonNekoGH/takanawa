@@ -32,6 +32,7 @@ export interface NativeDownloadSnapshot {
   completedChunks: string
   activeIo: number
   lastError?: string
+  lastErrorCode?: number
 }
 
 export interface NativeDownloadSpeedSnapshot {

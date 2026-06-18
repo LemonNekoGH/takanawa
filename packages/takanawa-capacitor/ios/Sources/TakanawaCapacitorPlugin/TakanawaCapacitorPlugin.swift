@@ -113,9 +113,13 @@ public class TakanawaCapacitorPlugin: CAPPlugin, CAPBridgedPlugin {
       case .completed:
         return ["snapshot": snapshotPayload(snapshot)]
       case .failed:
-        throw TakanawaCapacitorError.invalidConfig(self.snapshotLastError(task: download, snapshot: snapshot) ?? "download failed")
+        throw TakanawaCapacitorError.invalidConfig(
+          self.formatTakanawaError(snapshot.lastError?.statusCode, self.snapshotLastError(task: download, snapshot: snapshot) ?? "download failed")
+        )
       case .cancelled:
-        throw TakanawaCapacitorError.invalidConfig(self.snapshotLastError(task: download, snapshot: snapshot) ?? "download cancelled")
+        throw TakanawaCapacitorError.invalidConfig(
+          self.formatTakanawaError(snapshot.lastError?.statusCode, self.snapshotLastError(task: download, snapshot: snapshot) ?? "download cancelled")
+        )
       default:
         throw TakanawaCapacitorError.invalidConfig("download ended before reaching a terminal phase")
       }
@@ -160,6 +164,13 @@ public class TakanawaCapacitorPlugin: CAPPlugin, CAPBridgedPlugin {
     return taskId
   }
 
+  private func formatTakanawaError(_ code: Int32?, _ message: String) -> String {
+    guard let code, code != 0 else {
+      return message
+    }
+    return "takanawa error \(code): \(message)"
+  }
+
   private func runAsync(_ call: CAPPluginCall, _ block: @escaping () throws -> JSObject?) {
     queue.async {
       do {
@@ -172,8 +183,14 @@ public class TakanawaCapacitorPlugin: CAPPlugin, CAPBridgedPlugin {
           }
         }
       } catch {
+        let message: String
+        if let error = error as? TakanawaError {
+          message = self.formatTakanawaError(error.statusCode, error.description)
+        } else {
+          message = String(describing: error)
+        }
         DispatchQueue.main.async {
-          call.reject(String(describing: error))
+          call.reject(message)
         }
       }
     }

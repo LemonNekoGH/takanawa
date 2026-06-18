@@ -29,6 +29,7 @@ class TakanawaDownload internal constructor(handle: Long) : Closeable {
             chunkCount = values[4],
             completedChunks = values[5],
             activeIo = values[6].toInt(),
+            lastErrorCode = values[7].toInt(),
         )
     }
 
@@ -61,6 +62,15 @@ class TakanawaDownload internal constructor(handle: Long) : Closeable {
 
     fun lastError(): String = withHandle { NativeBridge.downloadLastError(it) }
 
+    fun lastErrorStatus(): TakanawaStatus? = withHandle {
+        val code = NativeBridge.downloadLastErrorCode(it)
+        if (code == TakanawaStatus.OK.code) {
+            null
+        } else {
+            TakanawaStatus.fromCode(code)
+        }
+    }
+
     override fun close() {
         val currentHandle = handle.getAndSet(CLOSED_HANDLE)
         if (currentHandle != CLOSED_HANDLE) {
@@ -87,7 +97,7 @@ class TakanawaDownload internal constructor(handle: Long) : Closeable {
 
     companion object {
         private const val CLOSED_HANDLE = 0L
-        private const val SNAPSHOT_FIELD_COUNT = 7
+        private const val SNAPSHOT_FIELD_COUNT = 8
 
         @JvmStatic
         fun create(config: DownloadConfig): TakanawaDownload {

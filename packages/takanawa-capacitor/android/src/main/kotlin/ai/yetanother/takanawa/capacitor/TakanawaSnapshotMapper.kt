@@ -15,6 +15,9 @@ internal fun DownloadSnapshot.toJSObject(lastError: String? = null): JSObject {
     payload.put("chunkCount", chunkCount.toString())
     payload.put("completedChunks", completedChunks.toString())
     payload.put("activeIo", activeIo)
+    if (lastErrorCode != 0) {
+        payload.put("lastErrorCode", lastErrorCode)
+    }
     if (!lastError.isNullOrBlank()) {
         payload.put("lastError", lastError)
     }

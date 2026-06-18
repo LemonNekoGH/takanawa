@@ -8,4 +8,5 @@ data class DownloadSnapshot(
     val chunkCount: Long,
     val completedChunks: Long,
     val activeIo: Int,
+    val lastErrorCode: Int = 0,
 )

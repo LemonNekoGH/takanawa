@@ -294,7 +294,7 @@ impl DownloadHandle {
             if let Err(err) = run_download(engine, config, state.clone(), control).await {
                 match err {
                     TakanawaError::Cancelled => state.mark_cancelled(),
-                    err => state.mark_failed(err.to_string()),
+                    err => state.mark_failed(&err),
                 }
             }
         }));

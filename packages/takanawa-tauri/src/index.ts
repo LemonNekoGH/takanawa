@@ -3,11 +3,15 @@ import { listen } from '@tauri-apps/api/event'
 import {
   createTakanawaApi,
   decodeBase64ToUint8Array,
+  TakanawaError,
+  TakanawaStatus,
   type DownloadListenerHandle as CoreDownloadListenerHandle,
   type DownloadOptions as CoreDownloadOptions,
   type DownloadProgressListener as CoreDownloadProgressListener,
   type DownloadSnapshot as CoreDownloadSnapshot,
   type DownloadSpeedListener as CoreDownloadSpeedListener,
+  type TakanawaStatusCode,
+  type TakanawaStatusName,
   type TakanawaTargetAdapter
 } from 'takanawa-js-core'
 
@@ -71,6 +75,7 @@ export interface DownloadSnapshot {
   completedChunks: bigint
   activeIo: number
   lastError?: string
+  lastErrorCode?: number
 }
 
 export interface DownloadSpeedSnapshot {
@@ -213,3 +218,6 @@ export type {
   NativeSnapshotResult,
   NativeTaskResult
 } from './definitions'
+
+export { TakanawaError, TakanawaStatus }
+export type { TakanawaStatusCode, TakanawaStatusName }

@@ -98,6 +98,29 @@ pub enum TakanawaError {
 
 impl TakanawaError {
     #[must_use]
+    /// Returns the stable numeric status code for this error.
+    pub fn status_code(&self) -> i32 {
+        match self {
+            Self::NullPointer(_) => -1,
+            Self::StructSizeMismatch { .. } | Self::AbiMismatch(_) => -2,
+            Self::InvalidConfig(_) | Self::NotRunning | Self::Utf8(_) => -3,
+            Self::RuntimeNotInitialized => -4,
+            Self::TargetExists(_) => -10,
+            Self::PartBusy(_) => -11,
+            Self::PartSizeMismatch { .. } => -12,
+            Self::PartCorrupt(_) => -13,
+            Self::RemoteChanged(_) => -14,
+            Self::HttpProtocol(_) | Self::RetryableHttpStatus(_) => -20,
+            Self::Network(_) => -21,
+            Self::Io(_) => -30,
+            Self::HashMismatch => -40,
+            Self::Cancelled => -50,
+            Self::AlreadyStarted => -51,
+            Self::Ffi(_) => -101,
+        }
+    }
+
+    #[must_use]
     /// Returns whether retrying the operation may succeed.
     pub fn is_retryable(&self) -> bool {
         matches!(self, Self::Network(_) | Self::RetryableHttpStatus(_))

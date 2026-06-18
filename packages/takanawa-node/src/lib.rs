@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use napi::bindgen_prelude::{Buffer, Result};
 use napi_derive::napi;
-use takanawa_core::{HashConfig, HashKind};
+use takanawa_core::{HashConfig, HashKind, TakanawaError};
 use takanawa_http::{
     DownloadConfig, DownloadEngine, DownloadHandle, DownloadPhase, DownloadSnapshot,
     DownloadSpeedSnapshot, RetryConfig, TimeoutConfig, download_to_completion,
@@ -76,6 +76,8 @@ pub struct NativeDownloadSnapshot {
     pub active_io: u32,
     /// Last failure message, when present.
     pub last_error: Option<String>,
+    /// Stable status code for the last failure, when present.
+    pub last_error_code: Option<i32>,
 }
 
 /// JavaScript-facing download speed snapshot.
@@ -140,7 +142,7 @@ impl NativeDownloadTask {
             .enable_all()
             .thread_name("takanawa-node")
             .build()
-            .map_err(to_napi_error)?;
+            .map_err(|err| to_napi_error_with_code(-101, err))?;
         Ok(Self {
             runtime,
             handle: Arc::new(DownloadHandle::new(engine, config)),
@@ -238,7 +240,7 @@ fn parse_optional_u64(value: Option<String>, field: &str) -> Result<Option<u64>>
     value
         .map(|value| {
             value.parse::<u64>().map_err(|err| {
-                napi::Error::from_reason(format!("invalid {field}: expected u64 string: {err}"))
+                invalid_config_error(format!("invalid {field}: expected u64 string: {err}"))
             })
         })
         .transpose()
@@ -252,9 +254,7 @@ fn hash_config(hash: Option<NativeHashConfig>, sha256: Option<String>) -> Result
             let kind = parse_hash_kind(&hash.kind)?;
             hash_config_from_parts(kind, &hash.expected)
         }
-        (Some(_), Some(_)) => Err(napi::Error::from_reason(
-            "use either hash or sha256, not both".to_string(),
-        )),
+        (Some(_), Some(_)) => Err(invalid_config_error("use either hash or sha256, not both")),
     }
 }
 
@@ -265,9 +265,7 @@ fn parse_hash_kind(value: &str) -> Result<HashKind> {
         "sha512" | "sha-512" => Ok(HashKind::Sha512),
         "md5" => Ok(HashKind::Md5),
         "crc32" | "crc-32" => Ok(HashKind::Crc32),
-        _ => Err(napi::Error::from_reason(format!(
-            "unsupported hash kind: {value}"
-        ))),
+        _ => Err(invalid_config_error(format!("unsupported hash kind: {value}"))),
     }
 }
 
@@ -278,7 +276,7 @@ fn hash_config_from_parts(kind: HashKind, value: &str) -> Result<HashConfig> {
         .unwrap_or(value);
     let expected_len = kind.expected_len();
     if normalized.len() != expected_len * 2 {
-        return Err(napi::Error::from_reason(format!(
+        return Err(invalid_config_error(format!(
             "invalid {}: expected {} hex characters",
             hash_label(kind),
             expected_len * 2
@@ -288,12 +286,11 @@ fn hash_config_from_parts(kind: HashKind, value: &str) -> Result<HashConfig> {
     let mut hash = vec![0_u8; expected_len];
     for (index, byte) in hash.iter_mut().enumerate() {
         let start = index * 2;
-        *byte = u8::from_str_radix(&normalized[start..start + 2], 16).map_err(|err| {
-            napi::Error::from_reason(format!("invalid {}: {err}", hash_label(kind)))
-        })?;
+        *byte = u8::from_str_radix(&normalized[start..start + 2], 16)
+            .map_err(|err| invalid_config_error(format!("invalid {}: {err}", hash_label(kind))))?;
     }
     HashConfig::from_expected_bytes(kind, &hash).ok_or_else(|| {
-        napi::Error::from_reason(format!(
+        invalid_config_error(format!(
             "invalid {}: expected {} bytes",
             hash_label(kind),
             expected_len
@@ -350,8 +347,16 @@ fn phase_to_string(phase: DownloadPhase) -> String {
     .to_string()
 }
 
-fn to_napi_error(error: impl std::error::Error) -> napi::Error {
-    napi::Error::from_reason(error.to_string())
+fn to_napi_error(error: TakanawaError) -> napi::Error {
+    to_napi_error_with_code(error.status_code(), error)
+}
+
+fn to_napi_error_with_code(code: i32, error: impl std::fmt::Display) -> napi::Error {
+    napi::Error::from_reason(format!("takanawa error {code}: {error}"))
+}
+
+fn invalid_config_error(message: impl std::fmt::Display) -> napi::Error {
+    to_napi_error_with_code(-3, message)
 }
 
 impl From<DownloadSnapshot> for NativeDownloadSnapshot {
@@ -365,6 +370,7 @@ impl From<DownloadSnapshot> for NativeDownloadSnapshot {
             completed_chunks: snapshot.completed_chunks.to_string(),
             active_io: snapshot.active_io.try_into().unwrap_or(u32::MAX),
             last_error: snapshot.last_error,
+            last_error_code: snapshot.last_error_code,
         }
     }
 }

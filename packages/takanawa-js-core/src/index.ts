@@ -1,5 +1,47 @@
 export type Awaitable<T> = T | Promise<T>
 
+export const TakanawaStatus = {
+  Ok: 0,
+  BufferTooSmall: 1,
+  NullPointer: -1,
+  AbiMismatch: -2,
+  InvalidConfig: -3,
+  RuntimeNotInitialized: -4,
+  TargetExists: -10,
+  PartBusy: -11,
+  PartSizeMismatch: -12,
+  PartCorrupt: -13,
+  RemoteChanged: -14,
+  HttpProtocol: -20,
+  Network: -21,
+  Io: -30,
+  HashMismatch: -40,
+  Cancelled: -50,
+  AlreadyStarted: -51,
+  Panic: -100,
+  Internal: -101
+} as const
+
+export type TakanawaStatusCode = (typeof TakanawaStatus)[keyof typeof TakanawaStatus]
+export type TakanawaStatusName = keyof typeof TakanawaStatus
+
+const STATUS_NAME_BY_CODE = new Map<number, TakanawaStatusName>(
+  Object.entries(TakanawaStatus).map(([name, code]) => [code, name as TakanawaStatusName])
+)
+const TAKANAWA_ERROR_PATTERN = /^takanawa error (-?\d+): ([\s\S]*)$/
+
+export class TakanawaError extends Error {
+  readonly statusCode?: number
+  readonly status?: TakanawaStatusName
+
+  constructor(message: string, statusCode?: number, options?: ErrorOptions) {
+    super(message, options)
+    this.name = 'TakanawaError'
+    this.statusCode = statusCode
+    this.status = statusCode === undefined ? undefined : STATUS_NAME_BY_CODE.get(statusCode)
+  }
+}
+
 export type DownloadPhase =
   | 'created'
   | 'starting'
@@ -50,6 +92,7 @@ export interface DownloadSnapshot {
   completedChunks: bigint
   activeIo: number
   lastError?: string
+  lastErrorCode?: number
 }
 
 export interface DownloadSpeedSnapshot {
@@ -101,6 +144,7 @@ export interface NormalizedDownloadSnapshot {
   completedChunks: string
   activeIo: number
   lastError?: string
+  lastErrorCode?: number
 }
 
 export interface NormalizedDownloadSpeedSnapshot {
@@ -147,23 +191,23 @@ export function createTakanawaApi<TTask>(adapter: TakanawaTargetAdapter<TTask>) 
     }
 
     async start(): Promise<void> {
-      await adapter.start(await this.#ensureTask())
+      await withTakanawaError(async () => adapter.start(await this.#ensureTask()))
     }
 
     async pause(): Promise<void> {
-      await adapter.pause(await this.#ensureTask())
+      await withTakanawaError(async () => adapter.pause(await this.#ensureTask()))
     }
 
     async cancel(): Promise<void> {
-      await adapter.cancel(await this.#ensureTask())
+      await withTakanawaError(async () => adapter.cancel(await this.#ensureTask()))
     }
 
     async snapshot(): Promise<DownloadSnapshot> {
-      return mapSnapshot(await adapter.snapshot(await this.#ensureTask()))
+      return mapSnapshot(await withTakanawaError(async () => adapter.snapshot(await this.#ensureTask())))
     }
 
     async bitmap(): Promise<Uint8Array> {
-      return adapter.bitmap(await this.#ensureTask())
+      return withTakanawaError(async () => adapter.bitmap(await this.#ensureTask()))
     }
 
     async close(): Promise<void> {
@@ -182,14 +226,16 @@ export function createTakanawaApi<TTask>(adapter: TakanawaTargetAdapter<TTask>) 
       if (taskPromise === undefined) {
         return
       }
-      await adapter.close(await taskPromise)
+      await withTakanawaError(async () => adapter.close(await taskPromise))
     }
 
     async addProgressListener(listener: DownloadProgressListener): Promise<DownloadListenerHandle> {
       const task = await this.#ensureTask()
-      const adapterHandle = await adapter.addProgressListener(task, (snapshot) => {
-        listener(mapSnapshot(snapshot))
-      })
+      const adapterHandle = await withTakanawaError(() =>
+        adapter.addProgressListener(task, (snapshot) => {
+          listener(mapSnapshot(snapshot))
+        })
+      )
       let removed = false
       const handle = {
         remove: async () => {
@@ -215,9 +261,11 @@ export function createTakanawaApi<TTask>(adapter: TakanawaTargetAdapter<TTask>) 
 
     async addSpeedListener(listener: DownloadSpeedListener): Promise<DownloadListenerHandle> {
       const task = await this.#ensureTask()
-      const adapterHandle = await adapter.addSpeedListener(task, (snapshot) => {
-        listener(mapSpeedSnapshot(snapshot))
-      })
+      const adapterHandle = await withTakanawaError(() =>
+        adapter.addSpeedListener(task, (snapshot) => {
+          listener(mapSpeedSnapshot(snapshot))
+        })
+      )
       let removed = false
       const handle = {
         remove: async () => {
@@ -242,7 +290,7 @@ export function createTakanawaApi<TTask>(adapter: TakanawaTargetAdapter<TTask>) 
         return this.#task
       }
       if (this.#taskPromise === undefined) {
-        this.#taskPromise = Promise.resolve(adapter.create(normalizeOptions(this.#options))).then(
+        this.#taskPromise = withTakanawaError(() => adapter.create(normalizeOptions(this.#options))).then(
           (task) => {
             this.#task = task
             return task
@@ -258,7 +306,7 @@ export function createTakanawaApi<TTask>(adapter: TakanawaTargetAdapter<TTask>) 
   }
 
   async function downloadToCompletion(options: DownloadOptions): Promise<DownloadSnapshot> {
-    return mapSnapshot(await adapter.downloadToCompletion(normalizeOptions(options)))
+    return mapSnapshot(await withTakanawaError(() => adapter.downloadToCompletion(normalizeOptions(options))))
   }
 
   return { DownloadTask, downloadToCompletion }
@@ -337,8 +385,38 @@ export function mapSnapshot(snapshot: NormalizedDownloadSnapshot): DownloadSnaps
     chunkCount: BigInt(snapshot.chunkCount),
     completedChunks: BigInt(snapshot.completedChunks),
     activeIo: snapshot.activeIo,
-    lastError: snapshot.lastError
+    lastError: snapshot.lastError,
+    lastErrorCode: snapshot.lastErrorCode
   }
+}
+
+export async function withTakanawaError<T>(action: () => Awaitable<T>): Promise<T> {
+  try {
+    return await action()
+  } catch (error) {
+    throw normalizeTakanawaError(error)
+  }
+}
+
+export function normalizeTakanawaError(error: unknown): TakanawaError {
+  if (error instanceof TakanawaError) {
+    return error
+  }
+  if (error instanceof TypeError) {
+    return new TakanawaError(error.message, TakanawaStatus.InvalidConfig, { cause: error })
+  }
+  if (error instanceof Error) {
+    return parseTakanawaErrorMessage(error.message, error)
+  }
+  return parseTakanawaErrorMessage(String(error))
+}
+
+function parseTakanawaErrorMessage(message: string, cause?: unknown): TakanawaError {
+  const match = TAKANAWA_ERROR_PATTERN.exec(message)
+  if (match === null) {
+    return new TakanawaError(message, undefined, cause === undefined ? undefined : { cause })
+  }
+  return new TakanawaError(match[2], Number(match[1]), cause === undefined ? undefined : { cause })
 }
 
 export function mapSpeedSnapshot(snapshot: NormalizedDownloadSpeedSnapshot): DownloadSpeedSnapshot {

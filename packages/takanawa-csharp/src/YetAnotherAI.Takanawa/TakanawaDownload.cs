@@ -93,7 +93,7 @@ namespace YetAnotherAI.Takanawa
                     StructSize = NativeConversions.SizeOf<NativeMethods.TknwDownloadSnapshot>(),
                 };
                 Takanawa.CheckStatus(NativeMethods.DownloadSnapshot(current, ref native), current);
-                return new DownloadSnapshot(native);
+                return new DownloadSnapshot(native, LastErrorStatus(current));
             });
         }
 
@@ -107,7 +107,7 @@ namespace YetAnotherAI.Takanawa
                     return;
                 }
 
-                var context = GCHandle.ToIntPtr(GCHandle.Alloc(new ProgressCallbackBox(callback)));
+                var context = GCHandle.ToIntPtr(GCHandle.Alloc(new ProgressCallbackBox(callback, current)));
                 var status = NativeMethods.DownloadSetProgressCallback(
                     current,
                     ProgressTrampoline,
@@ -163,6 +163,11 @@ namespace YetAnotherAI.Takanawa
         public string LastError()
         {
             return WithHandle(NativeBuffers.ReadLastError);
+        }
+
+        public TakanawaStatus? LastErrorStatus()
+        {
+            return WithHandle(LastErrorStatus);
         }
 
         public void Dispose()
@@ -230,6 +235,12 @@ namespace YetAnotherAI.Takanawa
             return handle.Open();
         }
 
+        private static TakanawaStatus? LastErrorStatus(IntPtr current)
+        {
+            var status = NativeConversions.NormalizeStatus(NativeMethods.DownloadLastErrorCode(current));
+            return status == TakanawaStatus.Ok ? null : status;
+        }
+
         private static byte[] NullTerminatedUtf8(string value)
         {
             var bytes = Encoding.UTF8.GetBytes(value);
@@ -251,7 +262,7 @@ namespace YetAnotherAI.Takanawa
                 var native = (NativeMethods.TknwDownloadSnapshot)Marshal.PtrToStructure(
                     snapshot,
                     typeof(NativeMethods.TknwDownloadSnapshot))!;
-                box.Callback(new DownloadSnapshot(native));
+                box.Callback(new DownloadSnapshot(native, LastErrorStatus(box.Handle)));
             }
             catch
             {
@@ -292,12 +303,15 @@ namespace YetAnotherAI.Takanawa
 
         private sealed class ProgressCallbackBox
         {
-            internal ProgressCallbackBox(Action<DownloadSnapshot> callback)
+            internal ProgressCallbackBox(Action<DownloadSnapshot> callback, IntPtr handle)
             {
                 Callback = callback;
+                Handle = handle;
             }
 
             internal Action<DownloadSnapshot> Callback { get; }
+
+            internal IntPtr Handle { get; }
         }
 
         private sealed class SpeedCallbackBox

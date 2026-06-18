@@ -267,6 +267,7 @@ pub struct TknwDownload {
     global: Arc<GlobalRuntime>,
     inner: DownloadHandle,
     last_error: Mutex<Option<String>>,
+    last_status: Mutex<Option<TknwStatus>>,
 }
 
 struct CallbackContext {
@@ -418,6 +419,7 @@ pub extern "C" fn tknw_download_create(
             inner: DownloadHandle::new(global.engine.clone(), download_config),
             global,
             last_error: Mutex::new(None),
+            last_status: Mutex::new(None),
         });
 
         // SAFETY: out_download is valid for writes by the function contract.
@@ -526,10 +528,7 @@ pub extern "C" fn tknw_download_set_progress_callback(
             if !context.is_null() || context_release.is_some() {
                 let err =
                     TakanawaError::InvalidConfig("callback context requires a callback".to_owned());
-                *download
-                    .last_error
-                    .lock()
-                    .expect("last error mutex poisoned") = Some(err.to_string());
+                store_last_error(download, &err);
                 return Err(err);
             }
             download.inner.set_progress_callback(None);
@@ -577,10 +576,7 @@ pub extern "C" fn tknw_download_set_speed_callback(
             if !context.is_null() || context_release.is_some() {
                 let err =
                     TakanawaError::InvalidConfig("callback context requires a callback".to_owned());
-                *download
-                    .last_error
-                    .lock()
-                    .expect("last error mutex poisoned") = Some(err.to_string());
+                store_last_error(download, &err);
                 return Err(err);
             }
             download.inner.set_speed_callback(None);
@@ -700,6 +696,33 @@ pub extern "C" fn tknw_download_last_error(
             *buffer.add(bytes.len()) = 0;
         }
         Ok(TknwStatus::Ok)
+    })
+}
+
+/// Returns the most recent download error status code.
+///
+/// Returns [`TknwStatus::Ok`] when the download has no recorded error.
+#[unsafe(no_mangle)]
+pub extern "C" fn tknw_download_last_error_code(download: *const TknwDownload) -> TknwStatus {
+    ffi_boundary(|| {
+        if download.is_null() {
+            return Err(TakanawaError::NullPointer("download"));
+        }
+        // SAFETY: download was checked for null and is only read during this call.
+        let download = unsafe { &*download };
+        let status = download
+            .inner
+            .snapshot()
+            .last_error_code
+            .map(status_from_code)
+            .or_else(|| {
+                *download
+                    .last_status
+                    .lock()
+                    .expect("last status mutex poisoned")
+            })
+            .unwrap_or(TknwStatus::Ok);
+        Ok(status)
     })
 }
 
@@ -841,10 +864,7 @@ where
         // SAFETY: download was checked for null and is borrowed only for this call.
         let download = unsafe { &mut *download };
         f(download).inspect_err(|err| {
-            *download
-                .last_error
-                .lock()
-                .expect("last error mutex poisoned") = Some(err.to_string());
+            store_last_error(download, err);
         })
     })) {
         Ok(Ok(status)) => status,
@@ -853,30 +873,43 @@ where
     }
 }
 
+fn store_last_error(download: &TknwDownload, err: &TakanawaError) {
+    *download
+        .last_error
+        .lock()
+        .expect("last error mutex poisoned") = Some(err.to_string());
+    *download
+        .last_status
+        .lock()
+        .expect("last status mutex poisoned") = Some(status_from_error(err));
+}
+
 fn status_from_error(err: &TakanawaError) -> TknwStatus {
-    match err {
-        TakanawaError::NullPointer(_) => TknwStatus::NullPointer,
-        TakanawaError::StructSizeMismatch { .. } | TakanawaError::AbiMismatch(_) => {
-            TknwStatus::AbiMismatch
-        }
-        TakanawaError::InvalidConfig(_) | TakanawaError::NotRunning | TakanawaError::Utf8(_) => {
-            TknwStatus::InvalidConfig
-        }
-        TakanawaError::RuntimeNotInitialized => TknwStatus::RuntimeNotInitialized,
-        TakanawaError::TargetExists(_) => TknwStatus::TargetExists,
-        TakanawaError::PartBusy(_) => TknwStatus::PartBusy,
-        TakanawaError::PartSizeMismatch { .. } => TknwStatus::PartSizeMismatch,
-        TakanawaError::PartCorrupt(_) => TknwStatus::PartCorrupt,
-        TakanawaError::RemoteChanged(_) => TknwStatus::RemoteChanged,
-        TakanawaError::HttpProtocol(_) | TakanawaError::RetryableHttpStatus(_) => {
-            TknwStatus::HttpProtocol
-        }
-        TakanawaError::Network(_) => TknwStatus::Network,
-        TakanawaError::Io(_) => TknwStatus::Io,
-        TakanawaError::HashMismatch => TknwStatus::HashMismatch,
-        TakanawaError::Cancelled => TknwStatus::Cancelled,
-        TakanawaError::AlreadyStarted => TknwStatus::AlreadyStarted,
-        TakanawaError::Ffi(_) => TknwStatus::Internal,
+    status_from_code(err.status_code())
+}
+
+const fn status_from_code(code: i32) -> TknwStatus {
+    match code {
+        0 => TknwStatus::Ok,
+        1 => TknwStatus::BufferTooSmall,
+        -1 => TknwStatus::NullPointer,
+        -2 => TknwStatus::AbiMismatch,
+        -3 => TknwStatus::InvalidConfig,
+        -4 => TknwStatus::RuntimeNotInitialized,
+        -10 => TknwStatus::TargetExists,
+        -11 => TknwStatus::PartBusy,
+        -12 => TknwStatus::PartSizeMismatch,
+        -13 => TknwStatus::PartCorrupt,
+        -14 => TknwStatus::RemoteChanged,
+        -20 => TknwStatus::HttpProtocol,
+        -21 => TknwStatus::Network,
+        -30 => TknwStatus::Io,
+        -40 => TknwStatus::HashMismatch,
+        -50 => TknwStatus::Cancelled,
+        -51 => TknwStatus::AlreadyStarted,
+        -100 => TknwStatus::Panic,
+        -101 => TknwStatus::Internal,
+        _ => TknwStatus::Internal,
     }
 }
 
@@ -933,12 +966,14 @@ mod android_jni {
         HashKind, TKNW_ABI_VERSION, TknwDownload, TknwDownloadConfig, TknwDownloadSnapshot,
         TknwDownloadSpeedSnapshot, TknwGlobalConfig, TknwStatus, tknw_download_cancel,
         tknw_download_copy_bitmap, tknw_download_create, tknw_download_last_error,
-        tknw_download_pause, tknw_download_release, tknw_download_set_progress_callback,
-        tknw_download_set_speed_callback, tknw_download_snapshot, tknw_download_start,
+        tknw_download_last_error_code, tknw_download_pause, tknw_download_release,
+        tknw_download_set_progress_callback, tknw_download_set_speed_callback,
+        tknw_download_snapshot, tknw_download_start,
         tknw_global_init, tknw_global_set_max_io, tknw_global_shutdown,
     };
 
     struct AndroidProgressCallback {
+        handle: usize,
         java_vm: JavaVM,
         listener: GlobalRef,
         _listener_class: GlobalRef,
@@ -1150,7 +1185,7 @@ mod android_jni {
             return status_code(status);
         }
 
-        let values = match snapshot_values(&snapshot) {
+        let values = match snapshot_values(&snapshot, download_const(handle)) {
             Ok(values) => values,
             Err(status) => return status_code(status),
         };
@@ -1217,7 +1252,7 @@ mod android_jni {
             let Ok(snapshot_ctor) = env.get_method_id(
                 &snapshot_class,
                 "<init>",
-                "(Lai/yetanother/takanawa/DownloadPhase;JJJJJI)V",
+                "(Lai/yetanother/takanawa/DownloadPhase;JJJJJII)V",
             ) else {
                 return Ok(status_code(TknwStatus::Internal));
             };
@@ -1225,6 +1260,7 @@ mod android_jni {
                 return Ok(status_code(TknwStatus::Internal));
             };
             let callback = Box::new(AndroidProgressCallback {
+                handle: handle as usize,
                 java_vm,
                 listener,
                 _listener_class: listener_class,
@@ -1420,6 +1456,15 @@ mod android_jni {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn Java_ai_yetanother_takanawa_NativeBridge_downloadLastErrorCode<'local>(
+        _env: JNIEnv<'local>,
+        _class: JClass<'local>,
+        handle: jlong,
+    ) -> jint {
+        status_code(tknw_download_last_error_code(download_const(handle)))
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn Java_ai_yetanother_takanawa_NativeBridge_downloadRelease<'local>(
         _env: JNIEnv<'local>,
         _class: JClass<'local>,
@@ -1488,7 +1533,7 @@ mod android_jni {
         };
         // SAFETY: snapshot is non-null and only read during this callback.
         let snapshot = unsafe { &*snapshot };
-        let Ok(values) = snapshot_values(snapshot) else {
+        let Ok(values) = snapshot_values(snapshot, download_const(callback.handle as jlong)) else {
             return;
         };
         let Ok(phase_code) = jint::try_from(snapshot.phase) else {
@@ -1512,6 +1557,9 @@ mod android_jni {
         let Ok(active_io) = jint::try_from(values[6]) else {
             return;
         };
+        let Ok(last_error_code) = jint::try_from(values[7]) else {
+            return;
+        };
         let snapshot_args = [
             JValue::Object(&phase).as_jni(),
             JValue::Long(values[1]).as_jni(),
@@ -1520,6 +1568,7 @@ mod android_jni {
             JValue::Long(values[4]).as_jni(),
             JValue::Long(values[5]).as_jni(),
             JValue::Int(active_io).as_jni(),
+            JValue::Int(last_error_code).as_jni(),
         ];
         // SAFETY: snapshot_ctor is resolved from DownloadSnapshot.<init> with
         // the exact argument list built above, and snapshot_class keeps the class loaded.
@@ -1696,7 +1745,10 @@ mod android_jni {
         handle as *const TknwDownload
     }
 
-    fn snapshot_values(snapshot: &TknwDownloadSnapshot) -> Result<[jlong; 7], TknwStatus> {
+    fn snapshot_values(
+        snapshot: &TknwDownloadSnapshot,
+        download: *const TknwDownload,
+    ) -> Result<[jlong; 8], TknwStatus> {
         Ok([
             jlong::from(snapshot.phase),
             jlong::try_from(snapshot.content_len).map_err(|_| TknwStatus::Internal)?,
@@ -1705,6 +1757,7 @@ mod android_jni {
             jlong::try_from(snapshot.chunk_count).map_err(|_| TknwStatus::Internal)?,
             jlong::try_from(snapshot.completed_chunks).map_err(|_| TknwStatus::Internal)?,
             jlong::try_from(snapshot.active_io).map_err(|_| TknwStatus::Internal)?,
+            jlong::from(status_code(tknw_download_last_error_code(download))),
         ])
     }
 

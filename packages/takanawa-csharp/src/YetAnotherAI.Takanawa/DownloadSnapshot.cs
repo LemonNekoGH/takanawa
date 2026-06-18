@@ -2,7 +2,7 @@ namespace YetAnotherAI.Takanawa
 {
     public readonly struct DownloadSnapshot
     {
-        internal DownloadSnapshot(NativeMethods.TknwDownloadSnapshot native)
+        internal DownloadSnapshot(NativeMethods.TknwDownloadSnapshot native, TakanawaStatus? lastStatus = null)
         {
             Phase = NativeConversions.ToDownloadPhase(native.Phase);
             ContentLen = NativeConversions.ToLong(native.ContentLen, nameof(ContentLen));
@@ -11,6 +11,7 @@ namespace YetAnotherAI.Takanawa
             ChunkCount = NativeConversions.ToLong(native.ChunkCount, nameof(ChunkCount));
             CompletedChunks = NativeConversions.ToLong(native.CompletedChunks, nameof(CompletedChunks));
             ActiveIo = NativeConversions.ToInt32(native.ActiveIo, nameof(ActiveIo));
+            LastStatus = lastStatus == TakanawaStatus.Ok ? null : lastStatus;
         }
 
         public DownloadPhase Phase { get; }
@@ -26,5 +27,7 @@ namespace YetAnotherAI.Takanawa
         public long CompletedChunks { get; }
 
         public int ActiveIo { get; }
+
+        public TakanawaStatus? LastStatus { get; }
     }
 }

@@ -11,6 +11,9 @@ internal func snapshotPayload(_ snapshot: DownloadSnapshot, lastError: String? =
   payload["chunkCount"] = String(snapshot.chunkCount)
   payload["completedChunks"] = String(snapshot.completedChunks)
   payload["activeIo"] = snapshot.activeIo
+  if let lastError = snapshot.lastError {
+    payload["lastErrorCode"] = Int(lastError.statusCode)
+  }
   if let lastError, !lastError.isEmpty {
     payload["lastError"] = lastError
   }

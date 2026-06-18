@@ -34,6 +34,7 @@ export interface NativeDownloadSnapshot {
   completed_chunks: string
   active_io: number
   last_error?: string
+  last_error_code?: number
 }
 
 export interface NativeDownloadSpeedSnapshot {

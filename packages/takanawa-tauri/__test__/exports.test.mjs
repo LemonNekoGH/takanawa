@@ -57,7 +57,8 @@ test('maps native snapshots to bigint public snapshots', () => {
     chunkCount: '2',
     completedChunks: '1',
     activeIo: 1,
-    lastError: undefined
+    lastError: undefined,
+    lastErrorCode: undefined
   })
 
   assert.equal(snapshot.phase, 'running')

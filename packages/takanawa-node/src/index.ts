@@ -1,5 +1,7 @@
 import {
   createTakanawaApi,
+  TakanawaError,
+  TakanawaStatus,
   type DownloadListenerHandle as CoreDownloadListenerHandle,
   type DownloadOptions as CoreDownloadOptions,
   type DownloadProgressListener as CoreDownloadProgressListener,
@@ -8,6 +10,8 @@ import {
   type NormalizedDownloadOptions,
   type NormalizedDownloadSnapshot,
   type NormalizedDownloadSpeedSnapshot,
+  type TakanawaStatusCode,
+  type TakanawaStatusName,
   type TakanawaTargetAdapter
 } from 'takanawa-js-core'
 
@@ -69,6 +73,7 @@ export interface DownloadSnapshot {
   completedChunks: bigint
   activeIo: number
   lastError?: string
+  lastErrorCode?: number
 }
 
 export interface DownloadSpeedSnapshot {
@@ -224,7 +229,8 @@ function fromNativeSnapshot(snapshot: NativeDownloadSnapshot): NormalizedDownloa
     chunkCount: snapshot.chunk_count,
     completedChunks: snapshot.completed_chunks,
     activeIo: snapshot.active_io,
-    lastError: snapshot.last_error
+    lastError: snapshot.last_error,
+    lastErrorCode: snapshot.last_error_code
   }
 }
 
@@ -249,9 +255,13 @@ function snapshotKey(snapshot: NormalizedDownloadSnapshot): string {
     snapshot.chunkCount,
     snapshot.completedChunks,
     snapshot.activeIo,
-    snapshot.lastError ?? ''
+    snapshot.lastError ?? '',
+    snapshot.lastErrorCode ?? ''
   ].join('\0')
 }
+
+export { TakanawaError, TakanawaStatus }
+export type { TakanawaStatusCode, TakanawaStatusName }
 
 function speedSnapshotKey(snapshot: NormalizedDownloadSpeedSnapshot): string {
   return [

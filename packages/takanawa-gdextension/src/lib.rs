@@ -40,6 +40,7 @@ pub struct TakanawaDownload {
     handle: Option<Arc<DownloadHandle>>,
     receiver: Option<Receiver<DownloadEvent>>,
     last_error: String,
+    last_error_code: i32,
     terminal_signal_emitted: bool,
 }
 
@@ -51,6 +52,7 @@ impl INode for TakanawaDownload {
             handle: None,
             receiver: None,
             last_error: String::new(),
+            last_error_code: 0,
             terminal_signal_emitted: false,
         }
     }
@@ -85,20 +87,21 @@ impl TakanawaDownload {
     pub fn configure(&mut self, options: VarDictionary) -> bool {
         self.close_task();
         self.last_error.clear();
+        self.last_error_code = 0;
         self.terminal_signal_emitted = false;
 
         let options = match NativeDownloadOptions::from_dictionary(&options) {
             Ok(options) => options,
-            Err(error) => return self.fail(error),
+            Err(error) => return self.fail_with_code(-3, error),
         };
         let max_io = options.max_io();
         let config = match config_from_options(options) {
             Ok(config) => config,
-            Err(error) => return self.fail(error),
+            Err(error) => return self.fail_with_code(-3, error),
         };
         let engine = match DownloadEngine::new(max_io) {
             Ok(engine) => engine,
-            Err(error) => return self.fail(error.to_string()),
+            Err(error) => return self.fail_with_code(error.status_code(), error.to_string()),
         };
 
         let handle = Arc::new(DownloadHandle::new(engine, config));
@@ -113,33 +116,37 @@ impl TakanawaDownload {
     #[func]
     pub fn start(&mut self) -> bool {
         let Some(handle) = self.handle.as_ref() else {
-            return self.fail("download task is not configured".to_string());
+            return self.fail_with_code(-3, "download task is not configured".to_string());
         };
-        match runtime().and_then(|runtime| handle.start_on(runtime).map_err(to_command_error)) {
+        let runtime = match runtime() {
+            Ok(runtime) => runtime,
+            Err(error) => return self.fail_with_code(-101, error),
+        };
+        match handle.start_on(runtime) {
             Ok(()) => true,
-            Err(error) => self.fail(error),
+            Err(error) => self.fail_with_code(error.status_code(), error.to_string()),
         }
     }
 
     #[func]
     pub fn pause(&mut self) -> bool {
         let Some(handle) = self.handle.as_ref() else {
-            return self.fail("download task is not configured".to_string());
+            return self.fail_with_code(-3, "download task is not configured".to_string());
         };
-        match handle.pause().map_err(to_command_error) {
+        match handle.pause() {
             Ok(()) => true,
-            Err(error) => self.fail(error),
+            Err(error) => self.fail_with_code(error.status_code(), error.to_string()),
         }
     }
 
     #[func]
     pub fn cancel(&mut self) -> bool {
         let Some(handle) = self.handle.as_ref() else {
-            return self.fail("download task is not configured".to_string());
+            return self.fail_with_code(-3, "download task is not configured".to_string());
         };
-        match handle.cancel().map_err(to_command_error) {
+        match handle.cancel() {
             Ok(()) => true,
-            Err(error) => self.fail(error),
+            Err(error) => self.fail_with_code(error.status_code(), error.to_string()),
         }
     }
 
@@ -179,6 +186,11 @@ impl TakanawaDownload {
     #[func]
     pub fn last_error(&self) -> GString {
         GString::from(self.last_error.as_str())
+    }
+
+    #[func]
+    pub fn last_error_code(&self) -> i32 {
+        self.last_error_code
     }
 
     fn close_task(&mut self) {
@@ -244,8 +256,9 @@ impl TakanawaDownload {
             .emit_signal("speed", &[payload.to_variant()]);
     }
 
-    fn fail(&mut self, error: String) -> bool {
+    fn fail_with_code(&mut self, code: i32, error: String) -> bool {
         self.last_error = error;
+        self.last_error_code = code;
         godot::global::godot_error!("[TakanawaDownload] {}", self.last_error);
         false
     }
@@ -350,6 +363,7 @@ struct NativeDownloadSnapshot {
     completed_chunks: String,
     active_io: usize,
     last_error: Option<String>,
+    last_error_code: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -383,7 +397,7 @@ fn runtime() -> CommandResult<&'static TokioRuntime> {
                 .enable_all()
                 .thread_name("takanawa-gdextension")
                 .build()
-                .map_err(to_command_error)
+                .map_err(|err| err.to_string())
         })
         .as_ref()
         .map_err(Clone::clone)
@@ -593,6 +607,11 @@ fn snapshot_to_dictionary(snapshot: DownloadSnapshot) -> VarDictionary {
     } else {
         dict.set("last_error", Variant::nil());
     }
+    if let Some(error_code) = snapshot.last_error_code {
+        dict.set("last_error_code", error_code.to_variant());
+    } else {
+        dict.set("last_error_code", Variant::nil());
+    }
     dict
 }
 
@@ -624,6 +643,7 @@ impl From<DownloadSnapshot> for NativeDownloadSnapshot {
             completed_chunks: snapshot.completed_chunks.to_string(),
             active_io: snapshot.active_io,
             last_error: snapshot.last_error,
+            last_error_code: snapshot.last_error_code,
         }
     }
 }
@@ -656,10 +676,6 @@ fn phase_to_string(phase: DownloadPhase) -> &'static str {
         DownloadPhase::Completed => "completed",
         DownloadPhase::Failed => "failed",
     }
-}
-
-fn to_command_error(error: impl std::fmt::Display) -> String {
-    error.to_string()
 }
 
 #[cfg(test)]
@@ -708,11 +724,13 @@ mod tests {
             completed_chunks: 1,
             active_io: 1,
             last_error: Some("waiting".to_string()),
+            last_error_code: Some(-13),
         });
 
         assert_eq!(snapshot.phase, "allocating");
         assert_eq!(snapshot.content_len, "9007199254740993");
         assert_eq!(snapshot.last_error.as_deref(), Some("waiting"));
+        assert_eq!(snapshot.last_error_code, Some(-13));
     }
 
     #[test]
@@ -728,6 +746,7 @@ mod tests {
                 completed_chunks: 0,
                 active_io: 0,
                 last_error: None,
+                last_error_code: None,
             }))
             .unwrap();
 

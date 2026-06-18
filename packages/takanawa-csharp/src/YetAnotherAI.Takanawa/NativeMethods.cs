@@ -69,6 +69,9 @@ namespace YetAnotherAI.Takanawa
             UIntPtr bufferLen,
             out UIntPtr written);
 
+        [DllImport(LibraryName, EntryPoint = "tknw_download_last_error_code", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern TakanawaStatus DownloadLastErrorCode(IntPtr download);
+
         [DllImport(LibraryName, EntryPoint = "tknw_download_release", CallingConvention = CallingConvention.Cdecl)]
         internal static extern TakanawaStatus DownloadRelease(ref IntPtr download);
 

@@ -44,5 +44,5 @@ export class TakanawaCapacitorWeb extends WebPlugin implements TakanawaCapacitor
 }
 
 function unsupported(): Promise<never> {
-  return Promise.reject(new Error('takanawa-capacitor is only available on Android and iOS'))
+  return Promise.reject(new Error('takanawa error -101: takanawa-capacitor is only available on Android and iOS'))
 }

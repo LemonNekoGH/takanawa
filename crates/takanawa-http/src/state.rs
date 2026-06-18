@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use takanawa_core::PartMetadata;
+use takanawa_core::{PartMetadata, TakanawaError};
 
 /// Lifecycle phase reported for a download.
 #[repr(u32)]
@@ -55,6 +55,8 @@ pub struct DownloadSnapshot {
     pub active_io: usize,
     /// Last failure message, when the download failed.
     pub last_error: Option<String>,
+    /// Stable status code for the last failure, when the download failed.
+    pub last_error_code: Option<i32>,
 }
 
 /// Callback invoked when download progress changes.
@@ -122,6 +124,7 @@ struct Progress {
     completed_chunks: u64,
     bitmap: Vec<u8>,
     last_error: Option<String>,
+    last_error_code: Option<i32>,
 }
 
 #[derive(Debug, Clone)]
@@ -352,6 +355,7 @@ impl SharedState {
                     completed_chunks: 0,
                     bitmap: Vec::new(),
                     last_error: None,
+                    last_error_code: None,
                 }),
                 speed: Mutex::new(SpeedProgress {
                     content_len: 0,
@@ -467,7 +471,7 @@ impl SharedState {
         }
     }
 
-    pub fn mark_failed(&self, message: impl Into<String>) {
+    pub fn mark_failed(&self, error: &TakanawaError) {
         {
             let mut progress = self
                 .inner
@@ -475,17 +479,20 @@ impl SharedState {
                 .lock()
                 .expect("download state mutex poisoned");
             progress.lifecycle = progress.lifecycle.mark_failed();
-            progress.last_error = Some(message.into());
+            progress.last_error = Some(error.to_string());
+            progress.last_error_code = Some(error.status_code());
         }
         self.notify_progress();
     }
 
     pub fn clear_error(&self) {
-        self.inner
+        let mut progress = self
+            .inner
             .progress
             .lock()
-            .expect("download state mutex poisoned")
-            .last_error = None;
+            .expect("download state mutex poisoned");
+        progress.last_error = None;
+        progress.last_error_code = None;
     }
 
     pub fn update_from_metadata(&self, metadata: &PartMetadata) {
@@ -552,6 +559,7 @@ impl SharedState {
             completed_chunks: progress.completed_chunks,
             active_io: self.inner.active_io.load(Ordering::Relaxed),
             last_error: progress.last_error,
+            last_error_code: progress.last_error_code,
         }
     }
 
@@ -899,7 +907,7 @@ mod tests {
         state.mark_completed();
         wait_for_len(&phases, 2);
         state.set_progress_callback(None);
-        state.mark_failed("ignored");
+        state.mark_failed(&TakanawaError::InvalidConfig("ignored".to_owned()));
 
         assert_eq!(
             *phases.lock().unwrap(),

@@ -1,9 +1,13 @@
 export {
   decodeBase64ToUint8Array,
   mapSnapshot,
+  normalizeTakanawaError,
   normalizeHash,
   normalizeHashKind,
-  normalizeOptions
+  normalizeOptions,
+  TakanawaError,
+  TakanawaStatus,
+  withTakanawaError
 } from 'takanawa-js-core'
 export type {
   DownloadOptions,
@@ -15,5 +19,7 @@ export type {
   NormalizedDownloadOptions as NativeDownloadOptions,
   NormalizedDownloadSnapshot as NativeDownloadSnapshot,
   NormalizedDownloadSpeedSnapshot as NativeDownloadSpeedSnapshot,
-  NormalizedHashConfig as NativeHashConfig
+  NormalizedHashConfig as NativeHashConfig,
+  TakanawaStatusCode,
+  TakanawaStatusName
 } from 'takanawa-js-core'

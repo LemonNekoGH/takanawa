@@ -502,6 +502,13 @@ TknwStatus tknw_download_last_error(const struct TknwDownload *download,
                                     size_t *written);
 
 /**
+ * Returns the most recent download error status code.
+ *
+ * Returns [`TKNW_STATUS_OK`] when the download has no recorded error.
+ */
+TknwStatus tknw_download_last_error_code(const struct TknwDownload *download);
+
+/**
  * Releases a download handle and sets the caller's handle pointer to null.
  */
 TknwStatus tknw_download_release(struct TknwDownload **download);

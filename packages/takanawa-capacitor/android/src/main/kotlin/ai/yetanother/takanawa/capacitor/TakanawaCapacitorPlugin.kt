@@ -5,6 +5,7 @@ import ai.yetanother.takanawa.DownloadSnapshot
 import ai.yetanother.takanawa.DownloadSpeedSnapshot
 import ai.yetanother.takanawa.Takanawa
 import ai.yetanother.takanawa.TakanawaDownload
+import ai.yetanother.takanawa.TakanawaException
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
@@ -119,8 +120,12 @@ class TakanawaCapacitorPlugin : Plugin() {
                     DownloadPhase.COMPLETED -> JSObject().also {
                         it.put("snapshot", snapshot.toJSObject())
                     }
-                    DownloadPhase.FAILED -> throw IllegalStateException(lastError ?: "download failed")
-                    DownloadPhase.CANCELLED -> throw IllegalStateException(lastError ?: "download cancelled")
+                    DownloadPhase.FAILED -> throw IllegalStateException(
+                        formatTakanawaError(snapshot.lastErrorCode, lastError ?: "download failed"),
+                    )
+                    DownloadPhase.CANCELLED -> throw IllegalStateException(
+                        formatTakanawaError(snapshot.lastErrorCode, lastError ?: "download cancelled"),
+                    )
                     else -> throw IllegalStateException("download ended before reaching a terminal phase")
                 }
             } finally {
@@ -158,6 +163,9 @@ class TakanawaCapacitorPlugin : Plugin() {
     private fun requiredTaskId(call: PluginCall): String =
         call.getString("taskId") ?: throw IllegalArgumentException("taskId is required")
 
+    private fun formatTakanawaError(code: Int, message: String): String =
+        if (code == 0) message else "takanawa error $code: $message"
+
     private fun runAsync(call: PluginCall, block: () -> JSObject?) {
         executor.execute {
             try {
@@ -170,8 +178,13 @@ class TakanawaCapacitorPlugin : Plugin() {
                     }
                 }
             } catch (error: Throwable) {
+                val message = if (error is TakanawaException) {
+                    formatTakanawaError(error.status.code, error.message ?: error.status.name)
+                } else {
+                    error.message ?: error.javaClass.simpleName
+                }
                 mainHandler.post {
-                    call.reject(error.message ?: error.javaClass.simpleName)
+                    call.reject(message)
                 }
             }
         }

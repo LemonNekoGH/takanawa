@@ -13,7 +13,7 @@ use std::time::Duration;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use serde::{Deserialize, Serialize};
-use takanawa_core::{HashConfig, HashKind};
+use takanawa_core::{HashConfig, HashKind, TakanawaError};
 use takanawa_http::{
     DEFAULT_MAX_IO, DownloadConfig, DownloadEngine, DownloadHandle, DownloadPhase,
     DownloadSnapshot, DownloadSpeedSnapshot, ProgressCallback, RetryConfig, SpeedCallback,
@@ -62,7 +62,7 @@ impl PluginState {
                 .enable_all()
                 .thread_name("takanawa-tauri")
                 .build()
-                .map_err(to_command_error)?,
+                .map_err(|err| to_command_error_with_code(-101, err))?,
             engine: DownloadEngine::new(DEFAULT_MAX_IO).map_err(to_command_error)?,
         })
     }
@@ -122,6 +122,7 @@ pub struct NativeDownloadSnapshot {
     completed_chunks: String,
     active_io: usize,
     last_error: Option<String>,
+    last_error_code: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -190,7 +191,7 @@ impl TaskRegistry {
             .expect("download task registry mutex poisoned")
             .get(task_id)
             .cloned()
-            .ok_or_else(|| format!("unknown download task: {task_id}"))
+            .ok_or_else(|| invalid_config_error(format!("unknown download task: {task_id}")))
     }
 
     fn close(&self, task_id: &str) {
@@ -353,7 +354,9 @@ fn parse_optional_u64(value: Option<&str>, field: &str) -> CommandResult<Option<
     value
         .map(|value| {
             value.parse::<u64>().map_err(|err| {
-                format!("invalid {field}: expected unsigned 64-bit integer string: {err}")
+                invalid_config_error(format!(
+                    "invalid {field}: expected unsigned 64-bit integer string: {err}"
+                ))
             })
         })
         .transpose()
@@ -370,7 +373,7 @@ fn hash_config(
             let kind = parse_hash_kind(&hash.kind)?;
             hash_config_from_parts(kind, &hash.expected)
         }
-        (Some(_), Some(_)) => Err("use either hash or sha256, not both".to_string()),
+        (Some(_), Some(_)) => Err(invalid_config_error("use either hash or sha256, not both")),
     }
 }
 
@@ -381,7 +384,7 @@ fn parse_hash_kind(value: &str) -> CommandResult<HashKind> {
         "sha512" | "sha-512" => Ok(HashKind::Sha512),
         "md5" => Ok(HashKind::Md5),
         "crc32" | "crc-32" => Ok(HashKind::Crc32),
-        _ => Err(format!("unsupported hash kind: {value}")),
+        _ => Err(invalid_config_error(format!("unsupported hash kind: {value}"))),
     }
 }
 
@@ -392,25 +395,25 @@ fn hash_config_from_parts(kind: HashKind, value: &str) -> CommandResult<HashConf
         .unwrap_or(value);
     let expected_len = kind.expected_len();
     if normalized.len() != expected_len * 2 {
-        return Err(format!(
+        return Err(invalid_config_error(format!(
             "invalid {}: expected {} hex characters",
             hash_label(kind),
             expected_len * 2
-        ));
+        )));
     }
 
     let mut hash = vec![0_u8; expected_len];
     for (index, byte) in hash.iter_mut().enumerate() {
         let start = index * 2;
         *byte = u8::from_str_radix(&normalized[start..start + 2], 16)
-            .map_err(|err| format!("invalid {}: {err}", hash_label(kind)))?;
+            .map_err(|err| invalid_config_error(format!("invalid {}: {err}", hash_label(kind))))?;
     }
     HashConfig::from_expected_bytes(kind, &hash).ok_or_else(|| {
-        format!(
+        invalid_config_error(format!(
             "invalid {}: expected {} bytes",
             hash_label(kind),
             expected_len
-        )
+        ))
     })
 }
 
@@ -447,8 +450,16 @@ fn hash_label(kind: HashKind) -> &'static str {
     }
 }
 
-fn to_command_error(error: impl std::fmt::Display) -> String {
-    error.to_string()
+fn to_command_error(error: TakanawaError) -> String {
+    to_command_error_with_code(error.status_code(), error)
+}
+
+fn to_command_error_with_code(code: i32, error: impl std::fmt::Display) -> String {
+    format!("takanawa error {code}: {error}")
+}
+
+fn invalid_config_error(message: impl std::fmt::Display) -> String {
+    to_command_error_with_code(-3, message)
 }
 
 impl From<DownloadSnapshot> for NativeDownloadSnapshot {
@@ -462,6 +473,7 @@ impl From<DownloadSnapshot> for NativeDownloadSnapshot {
             completed_chunks: snapshot.completed_chunks.to_string(),
             active_io: snapshot.active_io,
             last_error: snapshot.last_error,
+            last_error_code: snapshot.last_error_code,
         }
     }
 }
@@ -526,12 +538,14 @@ mod tests {
             completed_chunks: 1,
             active_io: 1,
             last_error: Some("waiting".to_string()),
+            last_error_code: Some(-13),
         });
 
         assert_eq!(snapshot.phase, "allocating");
         assert_eq!(snapshot.content_len, "9007199254740993");
         assert_eq!(snapshot.downloaded_bytes, "10");
         assert_eq!(snapshot.last_error.as_deref(), Some("waiting"));
+        assert_eq!(snapshot.last_error_code, Some(-13));
     }
 
     #[test]

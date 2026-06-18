@@ -2,11 +2,15 @@ import { registerPlugin } from '@capacitor/core'
 import {
   createTakanawaApi,
   decodeBase64ToUint8Array,
+  TakanawaError,
+  TakanawaStatus,
   type DownloadListenerHandle as CoreDownloadListenerHandle,
   type DownloadOptions as CoreDownloadOptions,
   type DownloadProgressListener as CoreDownloadProgressListener,
   type DownloadSnapshot as CoreDownloadSnapshot,
   type DownloadSpeedListener as CoreDownloadSpeedListener,
+  type TakanawaStatusCode,
+  type TakanawaStatusName,
   type TakanawaTargetAdapter
 } from 'takanawa-js-core'
 
@@ -66,6 +70,7 @@ export interface DownloadSnapshot {
   completedChunks: bigint
   activeIo: number
   lastError?: string
+  lastErrorCode?: number
 }
 
 export interface DownloadSpeedSnapshot {
@@ -181,3 +186,6 @@ export class DownloadTask {
 export function downloadToCompletion(options: DownloadOptions): Promise<DownloadSnapshot> {
   return capacitorApi.downloadToCompletion(options as CoreDownloadOptions) as Promise<CoreDownloadSnapshot> as Promise<DownloadSnapshot>
 }
+
+export { TakanawaError, TakanawaStatus }
+export type { TakanawaStatusCode, TakanawaStatusName }

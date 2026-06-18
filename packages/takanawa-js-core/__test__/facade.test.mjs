@@ -6,8 +6,11 @@ import {
   decodeBase64ToUint8Array,
   mapSnapshot,
   mapSpeedSnapshot,
+  normalizeTakanawaError,
   normalizeHashKind,
-  normalizeOptions
+  normalizeOptions,
+  TakanawaError,
+  TakanawaStatus
 } from '../dist/index.mjs'
 
 const nativeSnapshot = {
@@ -18,7 +21,8 @@ const nativeSnapshot = {
   chunkCount: '2',
   completedChunks: '1',
   activeIo: 1,
-  lastError: undefined
+  lastError: undefined,
+  lastErrorCode: undefined
 }
 
 const nativeSpeedSnapshot = {
@@ -81,6 +85,15 @@ test('maps native snapshots to bigint public snapshots', () => {
   assert.equal(snapshot.phase, 'running')
   assert.equal(snapshot.contentLen, 9007199254740993n)
   assert.equal(snapshot.downloadedBytes, 10n)
+})
+
+test('maps structured takanawa errors', () => {
+  const error = normalizeTakanawaError(new Error('takanawa error -13: part metadata is corrupt'))
+
+  assert.ok(error instanceof TakanawaError)
+  assert.equal(error.statusCode, TakanawaStatus.PartCorrupt)
+  assert.equal(error.status, 'PartCorrupt')
+  assert.equal(error.message, 'part metadata is corrupt')
 })
 
 test('maps native speed snapshots to bigint public snapshots', () => {

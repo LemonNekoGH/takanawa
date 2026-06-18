@@ -67,5 +67,8 @@ internal object NativeBridge {
     external fun downloadLastError(handle: Long): String
 
     @JvmStatic
+    external fun downloadLastErrorCode(handle: Long): Int
+
+    @JvmStatic
     external fun downloadRelease(handle: Long): Int
 }
