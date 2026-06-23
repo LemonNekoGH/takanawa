@@ -12,10 +12,10 @@ pub(crate) fn npm_publish(mode: &str) -> Result<()> {
     }
 
     let root = repo_root();
-    let npm_cache = env::var_os("NPM_CONFIG_CACHE")
+    let pnpm_cache = env::var_os("PNPM_CONFIG_CACHE_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|| root.join("target/npm-cache"));
-    fs::create_dir_all(&npm_cache)?;
+        .unwrap_or_else(|| root.join("target/pnpm-cache"));
+    fs::create_dir_all(&pnpm_cache)?;
 
     let packages = publishable_npm_packages()?;
     if packages.is_empty() {
@@ -32,20 +32,23 @@ pub(crate) fn npm_publish(mode: &str) -> Result<()> {
 
     for package in &packages {
         println!("::group::pnpm --filter {} build", package.name);
-        run_command(repo_command("pnpm").args(["--filter", package.name.as_str(), "build"]))?;
+        run_command(pnpm_command(&pnpm_cache).args(["--filter", package.name.as_str(), "build"]))?;
         println!("::endgroup::");
     }
 
     for package in &packages {
-        let package_dir = format!("./{}", package.dir);
         if mode == "dry-run" {
-            println!("::group::npm pack --dry-run {package_dir}");
-            run_command(npm_command(&npm_cache).args(["pack", package_dir.as_str(), "--dry-run"]))?;
+            println!("::group::pnpm pack --dry-run {}", package.dir);
+            run_command(
+                pnpm_command(&pnpm_cache)
+                    .current_dir(root.join(&package.dir))
+                    .args(["pack", "--dry-run"]),
+            )?;
             println!("::endgroup::");
             continue;
         }
 
-        if npm_package_version_exists(&npm_cache, &package.name, &package.version)? {
+        if npm_package_version_exists(&pnpm_cache, &package.name, &package.version)? {
             println!(
                 "::notice title=Already published::{} {} already exists on npm; skipping.",
                 package.name, package.version
@@ -53,27 +56,31 @@ pub(crate) fn npm_publish(mode: &str) -> Result<()> {
             continue;
         }
 
-        let mut args = vec!["publish", package_dir.as_str(), "--provenance"];
+        let mut args = vec!["publish", "--provenance", "--no-git-checks"];
         if package.name.starts_with('@') {
             args.push("--access");
             args.push("public");
         }
-        println!("::group::npm publish {}@{}", package.name, package.version);
-        run_command(npm_command(&npm_cache).args(args))?;
+        println!("::group::pnpm publish {}@{}", package.name, package.version);
+        run_command(
+            pnpm_command(&pnpm_cache)
+                .current_dir(root.join(&package.dir))
+                .args(args),
+        )?;
         println!("::endgroup::");
     }
 
     Ok(())
 }
 
-fn npm_command(npm_cache: &Path) -> Command {
-    let mut command = repo_command("npm");
-    command.env("NPM_CONFIG_CACHE", npm_cache);
+fn pnpm_command(pnpm_cache: &Path) -> Command {
+    let mut command = repo_command("pnpm");
+    command.env("PNPM_CONFIG_CACHE_DIR", pnpm_cache);
     command
 }
 
-fn npm_package_version_exists(npm_cache: &Path, name: &str, version: &str) -> Result<bool> {
-    let status = npm_command(npm_cache)
+fn npm_package_version_exists(pnpm_cache: &Path, name: &str, version: &str) -> Result<bool> {
+    let status = pnpm_command(pnpm_cache)
         .args(["view", format!("{name}@{version}").as_str(), "version"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())

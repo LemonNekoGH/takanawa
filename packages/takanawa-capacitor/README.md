@@ -9,7 +9,7 @@ The npm package includes the Capacitor bridge source and the iOS
 
 ```sh
 pnpm add takanawa-capacitor
-npx cap sync
+pnpm exec cap sync
 ```
 
 ## Usage

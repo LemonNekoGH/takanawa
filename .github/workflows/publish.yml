@@ -297,7 +297,7 @@ jobs:
         run: cargo run -p xtask -- github-release
 
   npm-publish:
-    name: npm publish
+    name: pnpm publish
     runs-on: ubuntu-latest
     needs: artifact-apple
     environment: npm-registry

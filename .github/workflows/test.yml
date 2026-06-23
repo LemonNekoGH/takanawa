@@ -122,7 +122,7 @@ jobs:
       - run: mise run publish:android-local
 
   npm-publish-dry-run:
-    name: npm publish dry-run
+    name: pnpm publish dry-run
     runs-on: macos-latest
     if: github.ref_type != 'tag'
     steps:
