@@ -10,7 +10,7 @@ Install the plugin in the Capacitor app:
 
 ```sh
 pnpm add takanawa-capacitor
-npx cap sync
+pnpm exec cap sync
 ```
 
 The package has a peer dependency on `@capacitor/core >=8 <9`. Its Android

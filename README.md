@@ -51,7 +51,7 @@ The `npm` GitHub Actions workflow publishes all non-private packages under
 `packages/*` when a `v*` tag is pushed. This includes `takanawa-node`,
 `takanawa-capacitor`, and `takanawa-tauri`. The private `takanawa-js-core`
 package is bundled into those target packages at build time and is not published
-separately. The workflow builds each package before `npm publish` so generated
+separately. The workflow builds each package before `pnpm publish` so generated
 `dist` files and package-specific native artifacts are included in the packed
 tarball.
 
